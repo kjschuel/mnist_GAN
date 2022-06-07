@@ -1,17 +1,121 @@
-# This is a sample Python script.
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import matplotlib.pyplot as plt
+import torch.optim as optim
+import torch.nn as nn
+import torchvision
+import tempfile
+import torch
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.tensorboard import SummaryWriter
+from keras.datasets import mnist
+
+(train_X, train_y), _ = mnist.load_data()
+
+def subMNIST(X, y, num):
+    if type(num) == int and 0 <= num <= 9:
+        return X[y == num]
+    else:
+        print("ERROR: Not a valid digit.")
+        return None
 
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
+class Discriminator(nn.Module):
+    def __init__(self, img_dim):
+        super().__init__()
+        self.disc = nn.Sequential(
+            nn.Linear(img_dim, 128),
+            nn.LeakyReLU(0.1),
+            nn.Linear(128, 1),
+            nn.Sigmoid()  # Sigmoid to ensure the value is between 0 and 1, -> fake or real image
+        )
+
+    def forward(self, x):
+        return self.disc(x)
 
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
+class Generator(nn.Module):
+    def __init__(self, z_dim, img_dim):
+        super().__init__()
+        self.gen = nn.Sequential(
+            nn.Linear(z_dim, 256),
+            nn.LeakyReLU(0.1),
+            nn.Linear(256, img_dim),
+            nn.Tanh()  # output of the pixel values are between -1 and 1 (input is normalized this way)
+        )
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    def forward(self, x):
+        return self.gen(x)
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+lr = 3e-4
+z_dim = 64 #128, 256 and smaller
+img_dim = 1*28*28 #784
+batch_size = 32
+num_epoch = 3
+
+disc = Discriminator(img_dim).to(device)
+gen = Generator(z_dim, img_dim).to(device)
+fixed_noise = torch.randn((batch_size, z_dim)).to(device)
+trans = transforms.Compose(
+    [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+)
+
+tensor_X = torch.Tensor(train_X)
+dataset = TensorDataset(tensor_X)
+loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+opt_disc = optim.Adam(disc.parameters(), lr=lr)
+opt_gen = optim.Adam(gen.parameters(), lr=lr)
+criterion = nn.BCELoss()
+writer_fake = SummaryWriter(f"runs/GAN_MNIST/fake")
+writer_real = SummaryWriter(f"runs/GAN_MNIST/real")
+step = 0
+
+for epoch in range(num_epoch):
+    for batch_idx, real in enumerate(loader):
+        real = real[0].view(-1, img_dim).to(device)
+        batch_size = real.shape[0]
+
+        #Train the Discriminator: max log(D(real)) + log(1 - D(G(z)))
+        noise = torch.randn(batch_size, z_dim).to(device)
+        fake = gen(noise)
+        disc_real = disc(real).view(-1)
+        lossD_real = criterion(disc_real, torch.ones_like(disc_real))
+        disc_fake = disc(fake).view(-1)
+        lossD_fake = criterion(disc_fake, torch.zeros_like(disc_fake))
+        lossD = (lossD_real + lossD_fake) / 2
+        disc.zero_grad()
+        lossD.backward(retain_graph=True)
+        opt_disc.step()
+
+        #Train the Generator: min log(1 - D(G(z))) <-> max log(D(G(z)))
+        output = disc(fake).view(-1)
+        lossG = criterion(output, torch.ones_like(output))
+        gen.zero_grad()
+        lossG.backward()
+        opt_gen.step()
+
+        #TensorBoard
+        if batch_idx == 0:
+            print(
+                f"Epoch [{epoch}/{num_epoch}] \ "
+                f"Loss D: {lossD:.4f}, Loss G: {lossG:.4f}"
+            )
+
+            with torch.no_grad():
+                fake = gen(fixed_noise).reshape(-1, 1, 28, 28)
+                data = real.reshape(-1, 1, 28, 28)
+                img_grid_fake = torchvision.utils.make_grid(fake, normalize=True)
+                img_grid_real = torchvision.utils.make_grid(data, normalize=True)
+
+                writer_fake.add_image(
+                    "Mnist Fake Images", img_grid_fake, global_step=step
+                )
+
+                writer_real.add_image(
+                    "Mnist Real Images", img_grid_real, global_step=step
+                )
+
+            step += 1
