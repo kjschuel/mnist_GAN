@@ -50,10 +50,10 @@ class Generator(nn.Module):
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 lr = 3e-4
-z_dim = 64 #128, 256 and smaller
+z_dim = 32 #128, 256 and smaller
 img_dim = 1*28*28 #784
 batch_size = 32
-num_epoch = 3
+num_epoch = 5
 
 disc = Discriminator(img_dim).to(device)
 gen = Generator(z_dim, img_dim).to(device)
@@ -69,8 +69,8 @@ loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 opt_disc = optim.Adam(disc.parameters(), lr=lr)
 opt_gen = optim.Adam(gen.parameters(), lr=lr)
 criterion = nn.BCELoss()
-writer_fake = SummaryWriter(f"runs/GAN_MNIST/fake")
-writer_real = SummaryWriter(f"runs/GAN_MNIST/real")
+writer_fake = SummaryWriter("runs/GAN_MNIST/fake")
+writer_real = SummaryWriter("runs/GAN_MNIST/real")
 step = 0
 
 for epoch in range(num_epoch):
@@ -78,7 +78,7 @@ for epoch in range(num_epoch):
         real = real[0].view(-1, img_dim).to(device)
         batch_size = real.shape[0]
 
-        #Train the Discriminator: max log(D(real)) + log(1 - D(G(z)))
+        # Train the Discriminator: max log(D(real)) + log(1 - D(G(z)))
         noise = torch.randn(batch_size, z_dim).to(device)
         fake = gen(noise)
         disc_real = disc(real).view(-1)
@@ -90,14 +90,14 @@ for epoch in range(num_epoch):
         lossD.backward(retain_graph=True)
         opt_disc.step()
 
-        #Train the Generator: min log(1 - D(G(z))) <-> max log(D(G(z)))
+        # Train the Generator: min log(1 - D(G(z))) <-> max log(D(G(z)))
         output = disc(fake).view(-1)
         lossG = criterion(output, torch.ones_like(output))
         gen.zero_grad()
         lossG.backward()
         opt_gen.step()
 
-        #TensorBoard
+        # TensorBoard
         if batch_idx == 0:
             print(
                 f"Epoch [{epoch}/{num_epoch}] \ "
