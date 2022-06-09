@@ -50,10 +50,10 @@ class Generator(nn.Module):
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 lr = 3e-4
-z_dim = 32 #128, 256 and smaller
+z_dim = 128 #128, 256 and smaller
 img_dim = 1*28*28 #784
 batch_size = 32
-num_epoch = 5
+num_epoch = 50
 
 disc = Discriminator(img_dim).to(device)
 gen = Generator(z_dim, img_dim).to(device)
